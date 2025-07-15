@@ -157,3 +157,82 @@
     )
   )
 )
+
+;; Create a new governance proposal
+(define-public (create-proposal
+    (title (string-ascii 50))
+    (description (string-ascii 500))
+    (duration uint)
+  )
+  (let (
+      (user-stake (default-to u0 (map-get? user-stakes tx-sender)))
+      (proposal-id (+ (var-get proposal-count) u1))
+      (start-block stacks-block-height)
+      (end-block (+ stacks-block-height duration))
+    )
+    (begin
+      (asserts! (validate-title title) ERR-INVALID-TITLE)
+      (asserts! (validate-description description) ERR-INVALID-DESCRIPTION)
+      (asserts! (>= user-stake (var-get min-proposal-stake))
+        ERR-INSUFFICIENT-STAKE
+      )
+      (asserts! (> duration u0) ERR-INVALID-AMOUNT)
+      (map-set proposals proposal-id {
+        creator: tx-sender,
+        title: title,
+        description: description,
+        start-block: start-block,
+        end-block: end-block,
+        status: "active",
+        yes-votes: u0,
+        no-votes: u0,
+        executed: false,
+        min-votes-required: (/ (var-get total-staked) u10), ;; 10% quorum requirement
+      })
+      (var-set proposal-count proposal-id)
+      (ok proposal-id)
+    )
+  )
+)
+
+;; Cast a weighted vote on an active proposal
+(define-public (vote
+    (proposal-id uint)
+    (vote-for bool)
+  )
+  (let (
+      (user-stake (default-to u0 (map-get? user-stakes tx-sender)))
+      (proposal (unwrap! (map-get? proposals proposal-id) ERR-PROPOSAL-NOT-FOUND))
+      (vote-key {
+        proposal-id: proposal-id,
+        voter: tx-sender,
+      })
+      (validated-vote (validate-vote vote-for))
+    )
+    (begin
+      (asserts! validated-vote ERR-INVALID-VOTE)
+      (asserts! (is-proposal-active proposal-id) ERR-PROPOSAL-NOT-ACTIVE)
+      (asserts! (> user-stake u0) ERR-INSUFFICIENT-STAKE)
+      (asserts! (is-none (map-get? votes vote-key)) ERR-ALREADY-VOTED)
+      ;; Record the vote with stake weight
+      (map-set votes vote-key {
+        vote: vote-for,
+        weight: user-stake,
+      })
+      ;; Update proposal vote tallies
+      (map-set proposals proposal-id
+        (merge proposal {
+          yes-votes: (if vote-for
+            (+ (get yes-votes proposal) user-stake)
+            (get yes-votes proposal)
+          ),
+          no-votes: (if vote-for
+            (get no-votes proposal)
+            (+ (get no-votes proposal) user-stake)
+          ),
+        })
+      )
+      (ok true)
+    )
+  )
+)
