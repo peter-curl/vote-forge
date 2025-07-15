@@ -236,3 +236,53 @@
     )
   )
 )
+
+;; Execute a successful proposal
+(define-public (execute-proposal (proposal-id uint))
+  (let ((proposal (unwrap! (map-get? proposals proposal-id) ERR-PROPOSAL-NOT-FOUND)))
+    (begin
+      (asserts! (can-execute-proposal proposal-id) ERR-INVALID-STATE)
+      ;; Mark proposal as executed
+      (map-set proposals proposal-id
+        (merge proposal {
+          status: "executed",
+          executed: true,
+        })
+      )
+      (ok true)
+    )
+  )
+)
+
+;; READ-ONLY QUERY FUNCTIONS
+
+;; Retrieve complete proposal information
+(define-read-only (get-proposal (proposal-id uint))
+  (map-get? proposals proposal-id)
+)
+
+;; Get user's current stake amount
+(define-read-only (get-user-stake (user principal))
+  (default-to u0 (map-get? user-stakes user))
+)
+
+;; Get user's vote on a specific proposal
+(define-read-only (get-user-vote
+    (proposal-id uint)
+    (user principal)
+  )
+  (map-get? votes {
+    proposal-id: proposal-id,
+    voter: user,
+  })
+)
+
+;; Get total amount staked across all users
+(define-read-only (get-total-staked)
+  (var-get total-staked)
+)
+
+;; Check if a proposal meets execution requirements
+(define-read-only (is-executable (proposal-id uint))
+  (can-execute-proposal proposal-id)
+)
