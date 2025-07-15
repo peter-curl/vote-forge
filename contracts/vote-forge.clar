@@ -75,3 +75,85 @@
   principal ;; user address
   uint ;; amount staked in satoshis
 )
+
+;; Vote registry with weight tracking
+(define-map votes
+  {
+    proposal-id: uint,
+    voter: principal,
+  }
+  {
+    vote: bool,
+    weight: uint,
+  }
+)
+
+;; VALIDATION FUNCTIONS
+
+;; Validates proposal title format and length
+(define-private (validate-title (title (string-ascii 50)))
+  (and
+    (not (is-eq title ""))
+    (<= (len title) u50)
+  )
+)
+
+;; Validates proposal description format and length
+(define-private (validate-description (description (string-ascii 500)))
+  (and
+    (not (is-eq description ""))
+    (<= (len description) u500)
+  )
+)
+
+;; Validates vote value is boolean
+(define-private (validate-vote (vote-value bool))
+  (or (is-eq vote-value true) (is-eq vote-value false))
+)
+
+;; Checks if proposal is within active voting period
+(define-private (is-proposal-active (proposal-id uint))
+  (let (
+      (proposal (unwrap! (map-get? proposals proposal-id) false))
+      (current-block stacks-block-height)
+    )
+    (and
+      (>= current-block (get start-block proposal))
+      (<= current-block (get end-block proposal))
+      (is-eq (get status proposal) "active")
+    )
+  )
+)
+
+;; Determines if proposal meets execution criteria
+(define-private (can-execute-proposal (proposal-id uint))
+  (let (
+      (proposal (unwrap! (map-get? proposals proposal-id) false))
+      (total-votes (+ (get yes-votes proposal) (get no-votes proposal)))
+    )
+    (and
+      (>= total-votes (get min-votes-required proposal))
+      (> (get yes-votes proposal) (get no-votes proposal))
+      (not (get executed proposal))
+      (>= stacks-block-height (get end-block proposal))
+    )
+  )
+)
+
+;; CORE GOVERNANCE FUNCTIONS
+
+;; Stake tokens to gain voting power in governance
+(define-public (stake (amount uint))
+  (let (
+      (current-stake (default-to u0 (map-get? user-stakes tx-sender)))
+      (new-stake (+ current-stake amount))
+    )
+    (begin
+      (asserts! (> amount u0) ERR-INVALID-AMOUNT)
+      (try! (stx-transfer? amount tx-sender (as-contract tx-sender)))
+      (map-set user-stakes tx-sender new-stake)
+      (var-set total-staked (+ (var-get total-staked) amount))
+      (ok new-stake)
+    )
+  )
+)
